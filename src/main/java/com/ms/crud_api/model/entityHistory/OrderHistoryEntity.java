@@ -1,16 +1,18 @@
+package com.ms.crud_api.model.entityHistory;
 
-package com.ms.crud_api.model.entity;
-
+import com.ms.crud_api.constant.enums.CrudTypeEnum;
 import com.ms.crud_api.infrastructure.model.entity.BaseSoftDeleteEntity;
-import com.ms.crud_api.model.entityHistory.OrderHistoryEntity;
+import com.ms.crud_api.model.entity.OrderEntity;
+import com.ms.crud_api.model.entity.OrderItemEntity;
+import com.ms.crud_api.model.entity.UserEntity;
 import jakarta.persistence.*;
 
 import java.util.HashSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "orders")
-public class OrderEntity extends BaseSoftDeleteEntity<Long> {
+@Table(name = "order_history")
+public class OrderHistoryEntity extends BaseSoftDeleteEntity<Long> {
 
     @Column(nullable = false)
     private double totalAmount;
@@ -23,37 +25,41 @@ public class OrderEntity extends BaseSoftDeleteEntity<Long> {
     @Column(nullable = false, length = 50)
     private String customerName;
 
-    @OneToMany(mappedBy = "order", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
-    private Set<OrderItemEntity> orderItemEntity = new HashSet<>();
+//    @ManyToMany
+//    @JoinTable(
+//            name = "order_history_order_items",
+//            joinColumns = @JoinColumn(name = "order_history_id"),
+//            inverseJoinColumns = @JoinColumn(name = "order_item_id")
+//    )
+//    private Set<OrderItemEntity> orderItemEntity = new HashSet<>();
 
     @ManyToOne
     @JoinColumn(name = "userId", nullable = false)
     private UserEntity userId;
 
-    @OneToMany(fetch = FetchType.LAZY, mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
-    private Set<OrderHistoryEntity> orderHistory = new HashSet<>();
+    @ManyToOne
+    @JoinColumn(name = "order_Id", nullable = false)
+    private OrderEntity order;
 
-    public OrderEntity(double totalAmount, String status, String paymentMethod, String shippingAddress, String customerName, Set<OrderItemEntity> orderItemEntity, UserEntity userId, Set<OrderHistoryEntity> orderHistory) {
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private CrudTypeEnum type;
+
+    public OrderHistoryEntity(double totalAmount, String status, String paymentMethod, String shippingAddress, String customerName, UserEntity userId, OrderEntity order, CrudTypeEnum type) {
         this.totalAmount = totalAmount;
         this.status = status;
         this.paymentMethod = paymentMethod;
         this.shippingAddress = shippingAddress;
         this.customerName = customerName;
-        this.orderItemEntity = orderItemEntity;
         this.userId = userId;
-        this.orderHistory = orderHistory;
+        this.order = order;
+        this.type = type;
     }
 
-    public OrderEntity() {
+    public OrderHistoryEntity() {
     }
 
-    public Set<OrderItemEntity> getOrderItemEntity() {
-        return orderItemEntity;
-    }
 
-    public void setOrderItemEntity(Set<OrderItemEntity> orderItemEntity) {
-        this.orderItemEntity = orderItemEntity;
-    }
 
     public double getTotalAmount() {
         return totalAmount;
@@ -103,11 +109,19 @@ public class OrderEntity extends BaseSoftDeleteEntity<Long> {
         this.customerName = customerName;
     }
 
-    public Set<OrderHistoryEntity> getOrderHistory() {
-        return orderHistory;
+    public OrderEntity getOrder() {
+        return order;
     }
 
-    public void setOrderHistory(Set<OrderHistoryEntity> orderHistory) {
-        this.orderHistory = orderHistory;
+    public void setOrder(OrderEntity order) {
+        this.order = order;
+    }
+
+    public CrudTypeEnum getType() {
+        return type;
+    }
+
+    public void setType(CrudTypeEnum type) {
+        this.type = type;
     }
 }

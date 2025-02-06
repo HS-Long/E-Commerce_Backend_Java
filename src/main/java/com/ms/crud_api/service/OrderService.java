@@ -1,5 +1,6 @@
 package com.ms.crud_api.service;
 
+import com.ms.crud_api.constant.enums.CrudTypeEnum;
 import com.ms.crud_api.exception.AlreadyExistException;
 import com.ms.crud_api.exception.BadRequestException;
 import com.ms.crud_api.exception.NotFoundException;
@@ -7,6 +8,7 @@ import com.ms.crud_api.model.entity.OrderEntity;
 import com.ms.crud_api.model.entity.OrderItemEntity;
 import com.ms.crud_api.model.entity.ProductEntity;
 import com.ms.crud_api.model.entity.UserEntity;
+import com.ms.crud_api.model.entityHistory.OrderHistoryEntity;
 import com.ms.crud_api.model.request.order.OrderRequest;
 import com.ms.crud_api.model.request.order.OrderRestore;
 import com.ms.crud_api.model.request.orderItem.OrderItemRequest;
@@ -22,9 +24,12 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.util.*;
 
 @Service
+@Transactional(readOnly = true)
 public class OrderService {
 
     private final OrderRepository orderRepository;
@@ -32,56 +37,78 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final OrderItemRepository orderItemRepository;
 
+    private final OrderHistoryService orderHistoryService;
+
     @Autowired
-    public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository, UserRepository userRepository, ProductRepository productRepository) {
+    public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository, UserRepository userRepository, ProductRepository productRepository, OrderHistoryService orderHistoryService) {
         this.orderRepository = orderRepository;
         this.userRepository = userRepository;
         this.productRepository = productRepository;
         this.orderItemRepository = orderItemRepository;
+        this.orderHistoryService = orderHistoryService;
     }
 
+    @Transactional(timeout = 10, rollbackFor = {Exception.class}, noRollbackFor = {AlreadyExistException.class})
     public OrderEntity create(OrderRequest request) throws Exception {
+        // Find the user by ID
         UserEntity user = userRepository.findById(Long.valueOf(request.getUserId()))
                 .orElseThrow(() -> new NotFoundException("User Not found"));
 
+        // Prepare order items and calculate total amount
         List<OrderItemRequest> orderItems = request.getOrderItem();
         List<OrderItemEntity> orderItemEntities = new ArrayList<>();
         double totalAmount = 0;
 
         for (OrderItemRequest orderItemRequest : orderItems) {
+            // Find the product by ID
             ProductEntity product = productRepository.findById(Long.valueOf(orderItemRequest.getProductId()))
                     .orElseThrow(() -> new NotFoundException("Product Not found"));
-
+            // Check if there is enough stock for the product
             if (product.getStockQuantity() < orderItemRequest.getQuantity()) {
                 throw new BadRequestException("Not enough stock for product: " + product.getName());
             }
-
+            // Update the product stock quantity
             product.setStockQuantity(product.getStockQuantity() - orderItemRequest.getQuantity());
             productRepository.save(product);
-
+            // Create order item entity
             OrderItemEntity orderItemEntity = new OrderItemEntity();
             orderItemEntity.setProductEntity(product);
             orderItemEntity.setQuantity(orderItemRequest.getQuantity());
             orderItemEntities.add(orderItemEntity);
-
+            // Calculate total amount
             totalAmount += product.getPrice() * orderItemRequest.getQuantity();
         }
 
+        // Create order entity
         OrderEntity data = request.toEntity(user, orderItemEntities);
         data.setTotalAmount(totalAmount);
+        OrderHistoryEntity orderHistoryEntity = new OrderHistoryEntity();
+        orderHistoryEntity.setTotalAmount(data.getTotalAmount());
+        orderHistoryEntity.setStatus(data.getStatus());
+        orderHistoryEntity.setPaymentMethod(data.getPaymentMethod());
+        orderHistoryEntity.setShippingAddress(data.getShippingAddress());
+        orderHistoryEntity.setCustomerName(data.getCustomerName());
+        orderHistoryEntity.setUserId(data.getUserId());
+        orderHistoryEntity.setType(CrudTypeEnum.CREATE);
 
+        orderHistoryEntity.setOrder(data);
+        // Set order reference in order items
         for (OrderItemEntity orderItemEntity : orderItemEntities) {
             orderItemEntity.setOrder(data);
         }
-
+        // Check if order with the same customer name already exists
 //        if (this.orderRepository.existsByCustomerNameAndDeletedAtIsNull(data.getCustomerName()))
 //            throw new AlreadyExistException("Order name already exists!");
 
         try {
-            return this.orderRepository.save(data);
+            // Save the order entity
+            OrderEntity saveData =  this.orderRepository.save(data);
+            // Create order history
+            orderHistoryService.create(orderHistoryEntity);
         } catch (Exception ex) {
             throw new Exception(ex);
         }
+        return data;
     }
 
     public OrderEntity findOne(Long id) throws NotFoundException {

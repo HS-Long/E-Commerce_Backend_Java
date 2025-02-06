@@ -17,6 +17,8 @@ public class OrderItemEntity extends BaseSoftDeleteEntity<Long> {
     @JoinColumn(name = "productId", nullable = false)
     private ProductEntity productEntity;
 
+
+
     public OrderItemEntity(int quantity, OrderEntity order, ProductEntity productEntity) {
         this.quantity = quantity;
         this.order = order;
