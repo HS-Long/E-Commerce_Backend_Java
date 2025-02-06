@@ -8,8 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional(readOnly = true)
 public class OrderHistoryService {
-
-
+    
     private final OrderHistoryRepository orderHistoryRepository;
 
     public OrderHistoryService(OrderHistoryRepository orderHistoryRepository) {
@@ -41,6 +40,16 @@ public class OrderHistoryService {
     public void delete(Long id) throws Exception {
         try {
             this.orderHistoryRepository.deleteById(id);
+        } catch (Exception ex) {
+            throw new Exception(ex);
+        }
+    }
+    
+    // restore the OrderHistoryEntity
+    @Transactional
+    public void restore(Long id) throws Exception {
+        try {
+            this.orderHistoryRepository.getById(id);
         } catch (Exception ex) {
             throw new Exception(ex);
         }

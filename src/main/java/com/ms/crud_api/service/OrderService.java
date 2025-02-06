@@ -111,61 +111,94 @@ public class OrderService {
         return data;
     }
 
+
+
     public OrderEntity findOne(Long id) throws NotFoundException {
         return this.orderRepository.findByIdAndDeletedAtIsNull(id).orElseThrow(() -> new NotFoundException("Order not found"));
     }
 
 
-
+    @Transactional(timeout = 10, rollbackFor = {Exception.class}, noRollbackFor = {AlreadyExistException.class})
     public OrderEntity update(Long id, OrderRequest request) throws Exception {
+
+        // Find the order by ID
         OrderEntity foundData = this.findOne(id);
 
+        // Restore stock quantities for existing order items
         for (OrderItemEntity existingOrderItem : foundData.getOrderItemEntity()) {
             ProductEntity product = existingOrderItem.getProductEntity();
             product.setStockQuantity(product.getStockQuantity() + existingOrderItem.getQuantity());
             productRepository.save(product);
         }
 
+        // Find the user by ID
         UserEntity user = userRepository.findById(Long.valueOf(request.getUserId()))
                 .orElseThrow(() -> new NotFoundException("User Not found"));
 
+        // Prepare new order items and calculate total amount
         List<OrderItemRequest> orderItems = request.getOrderItem();
         List<OrderItemEntity> orderItemEntities = new ArrayList<>();
         double totalAmount = 0;
 
         for (OrderItemRequest orderItemRequest : orderItems) {
+            // Find the product by ID
             ProductEntity product = productRepository.findById(Long.valueOf(orderItemRequest.getProductId()))
                     .orElseThrow(() -> new NotFoundException("Product Not found"));
 
+            // Check if there is enough stock for the product
             if (product.getStockQuantity() < orderItemRequest.getQuantity()) {
                 throw new BadRequestException("Not enough stock for product: " + product.getName());
             }
 
+            // Update the product stock quantity
             product.setStockQuantity(product.getStockQuantity() - orderItemRequest.getQuantity());
             productRepository.save(product);
 
+            // Create order item entity
             OrderItemEntity orderItemEntity = new OrderItemEntity();
             orderItemEntity.setProductEntity(product);
             orderItemEntity.setQuantity(orderItemRequest.getQuantity());
             orderItemEntities.add(orderItemEntity);
 
+            // Calculate total amount
             totalAmount += product.getPrice() * orderItemRequest.getQuantity();
         }
 
+        // Update order details
         foundData.setStatus(request.getStatus());
         foundData.setPaymentMethod(request.getPaymentMethod());
         foundData.setShippingAddress(request.getShippingAddress());
         foundData.setCustomerName(request.getCustomerName());
         foundData.setUserId(user);
-        foundData.setOrderItemEntity(new HashSet<>(orderItemEntities));
         foundData.setTotalAmount(totalAmount);
 
+        // Clear existing order items and add new ones
+        foundData.getOrderItemEntity().clear();
+        foundData.getOrderItemEntity().addAll(orderItemEntities);
+
+        // Set order reference in order items
         for (OrderItemEntity orderItemEntity : orderItemEntities) {
             orderItemEntity.setOrder(foundData);
         }
 
+        // Create order history entity
+        OrderHistoryEntity orderHistoryEntity = new OrderHistoryEntity();
+        orderHistoryEntity.setTotalAmount(foundData.getTotalAmount());
+        orderHistoryEntity.setStatus(foundData.getStatus());
+        orderHistoryEntity.setPaymentMethod(foundData.getPaymentMethod());
+        orderHistoryEntity.setShippingAddress(foundData.getShippingAddress());
+        orderHistoryEntity.setCustomerName(foundData.getCustomerName());
+        orderHistoryEntity.setUserId(foundData.getUserId());
+        orderHistoryEntity.setType(CrudTypeEnum.UPDATE);
+        orderHistoryEntity.setOrder(foundData);
+
         try {
-            return this.orderRepository.save(foundData);
+
+            // Save the updated order entity
+            OrderEntity updatedOrder = this.orderRepository.save(foundData);
+            // Create order history
+            orderHistoryService.create(orderHistoryEntity);
+            return updatedOrder;
         } catch (Exception ex) {
             throw new Exception(ex);
         }
@@ -220,34 +253,60 @@ public class OrderService {
     public OrderEntity findOneWithSoftDeleted(Long id) throws NotFoundException {
         return this.orderRepository.findByIdAndDeletedAtIsNotNull(id).orElseThrow(() -> new NotFoundException("User not found"));
     }
-
+    @Transactional(timeout = 10, rollbackFor = {Exception.class}, noRollbackFor = {AlreadyExistException.class})
     public OrderEntity restore(Long id, OrderRestore req) throws Exception {
-        // get category data from db by id
         OrderEntity orderEntity = this.findOneWithSoftDeleted(id);
 
-        // check name from request exists or not in db
         if (this.orderRepository.existsByCustomerNameAndDeletedAtIsNull(req.getCustomerName()))
             throw new AlreadyExistException("Username has already exits!");
 
-        // move deleted_at field to null value
         orderEntity.setDeletedAt(null);
         orderEntity.setCustomerName(req.getCustomerName());
 
+        // Create order history entity
+        OrderHistoryEntity orderHistoryEntity = new OrderHistoryEntity();
+        orderHistoryEntity.setTotalAmount(orderEntity.getTotalAmount());
+        orderHistoryEntity.setStatus(orderEntity.getStatus());
+        orderHistoryEntity.setPaymentMethod(orderEntity.getPaymentMethod());
+        orderHistoryEntity.setShippingAddress(orderEntity.getShippingAddress());
+        orderHistoryEntity.setCustomerName(orderEntity.getCustomerName());
+        orderHistoryEntity.setUserId(orderEntity.getUserId());
+        orderHistoryEntity.setType(CrudTypeEnum.RESTORE);
+        orderHistoryEntity.setOrder(orderEntity);
+
         try {
-            return this.orderRepository.save(orderEntity);
+            OrderEntity restoredOrder = this.orderRepository.save(orderEntity);
+            orderHistoryService.create(orderHistoryEntity);
+            return restoredOrder;
         } catch (Exception ex) {
             throw new Exception(ex);
         }
-
     }
-
+    @Transactional(timeout = 10, rollbackFor = {Exception.class}, noRollbackFor = {AlreadyExistException.class})
     public OrderEntity delete(Long id) throws Exception {
+
+        // Find OrderIEntity exits or not in db
         OrderEntity orderEntity = this.findOne(id);
 
+        // If exit set to new Date
         orderEntity.setDeletedAt(new Date());
 
+
+        // Create order history
+        OrderHistoryEntity orderHistoryEntity = new OrderHistoryEntity();
+        orderHistoryEntity.setTotalAmount(orderEntity.getTotalAmount());
+        orderHistoryEntity.setStatus(orderEntity.getStatus());
+        orderHistoryEntity.setPaymentMethod(orderEntity.getPaymentMethod());
+        orderHistoryEntity.setShippingAddress(orderEntity.getShippingAddress());
+        orderHistoryEntity.setCustomerName(orderEntity.getCustomerName());
+        orderHistoryEntity.setUserId(orderEntity.getUserId());
+        orderHistoryEntity.setType(CrudTypeEnum.DELETE);
+        orderHistoryEntity.setOrder(orderEntity);
+
         try {
-            return this.orderRepository.save(orderEntity);
+            OrderEntity deletedOrder = this.orderRepository.save(orderEntity);
+            orderHistoryService.create(orderHistoryEntity);
+            return deletedOrder;
         } catch (Exception ex) {
             throw new Exception(ex);
         }
