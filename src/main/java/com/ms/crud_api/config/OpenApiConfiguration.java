@@ -15,7 +15,7 @@ public class OpenApiConfiguration {
 
     @Bean
     public GroupedOpenApi frontendGroup() {
-        return GroupedOpenApi.builder().group("frontend-api").addOpenApiCustomizer(openApi -> openApi.info(getFrontendApiInfo())).packagesToScan("com.ms.crud_api.controller.frontend").build();
+        return GroupedOpenApi.builder().group("frontend-api").addOpenApiCustomizer(openApi -> openApi.info(getFrontendApiInfo())).packagesToScan("com.ms.crud_api.controller.Frontend").build();
     }
 
     private Info getBackendApiInfo() {
