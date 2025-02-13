@@ -12,7 +12,7 @@ spring:
 
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5432/spring_file
+    url: jdbc:postgresql://localhost:5432/E_Commerce_Backend
     username: postgres
     password: postgres
   jpa:
